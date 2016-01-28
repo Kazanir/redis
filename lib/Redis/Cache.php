@@ -288,7 +288,7 @@ class Redis_Cache
         if (!$this->flushCache) {
             $this->flushCache = $this->backend->getLastFlushTime();
         }
- 
+
          // At the very first hit, we might not have the timestamps set, thus
          // we need to create them to avoid our entry being considered as
          // invalid
@@ -328,15 +328,22 @@ class Redis_Cache
         );
 
         // Let Redis handle the data types itself.
-        if (!is_string($data)) {
-            $hash['data'] = serialize($data);
-            $hash['serialized'] = 1;
-        } else {
-            $hash['data'] = $data;
-            $hash['serialized'] = 0;
-        }
+        list($hash['data'], $hash['serialized']) = $this->serialize($data);
 
         return $hash;
+    }
+
+    protected function serialize($data) {
+      if (is_string($data)) {
+        return array($data, 0);
+      }
+      else {
+        return array(serialize($data), 1);
+      }
+    }
+
+    protected function unserialize($entry) {
+      return unserialize($entry->data);
     }
 
     /**
@@ -382,7 +389,7 @@ class Redis_Cache
         $entry->created = (int)$entry->created;
 
         if ($entry->serialized) {
-            $entry->data = unserialize($entry->data);
+            $entry->data = $this->unserialize($entry);
         }
 
         return $entry;
@@ -649,4 +656,24 @@ class Redis_Cache
             return $this->getNextIncrement();
         }
     }
+}
+
+class Redis_Deflate_Cache extends Redis_Cache implements DrupalCacheInterface {
+  protected function serialize($data) {
+    if (is_string($data)) {
+      return array(gzdeflate($data, 2), 1);
+    }
+    else {
+      return array(gzdeflate(serialize($data), 2), 2);
+    }
+  }
+
+  protected function unserialize($entry) {
+    if ($entry->serialized == 2) {
+      return unserialize(gzinflate($entry->data));
+    }
+    else {
+      return gzinflate($entry->data);
+    }
+  }
 }
